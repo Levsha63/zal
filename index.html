@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Zal — дневник тренировок</title>
+
+<!-- Вид на iPhone: учёт «чёлки» и «док-бара», запрет масштабирования -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="description" content="Дневник тренировок: подходы, вес, повторения, рекорды и прогресс. Работает офлайн, ставится на iPhone как приложение.">
+<meta name="theme-color" content="#0d1017">
+<meta name="color-scheme" content="dark">
+
+<!-- Чтобы приложение открывалось без адресной строки, как обычное -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Zal">
+<meta name="format-detection" content="telephone=no">
+
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
+<link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png">
+<link rel="icon" type="image/png" sizes="64x64" href="icons/favicon-64.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+  <header id="topbar">
+    <div class="grow">
+      <h1 id="bar-title">Тренировка</h1>
+      <div class="sub" id="bar-sub">Zal — дневник тренировок</div>
+    </div>
+    <button class="btn icon" id="bar-action" data-act="barAction" title="Действие">⋯</button>
+  </header>
+
+  <main id="screen"></main>
+
+  <div id="timerbar" hidden>
+    <div class="val mono" id="rest-val">1:30</div>
+    <div class="bar"><i id="rest-bar"></i></div>
+    <button class="btn sm ghost" data-act="restAdd" data-sec="-15">−15</button>
+    <button class="btn sm ghost" data-act="restAdd" data-sec="15">+15</button>
+    <button class="btn sm" data-act="restSkip">Готово</button>
+  </div>
+
+  <nav class="tabbar" id="tabs">
+    <button data-act="tab" data-tab="train" class="on"><span class="ico">🏋️</span>Тренировка</button>
+    <button data-act="tab" data-tab="history"><span class="ico">📋</span>История</button>
+    <button data-act="tab" data-tab="progress"><span class="ico">📈</span>Прогресс</button>
+    <button data-act="tab" data-tab="more"><span class="ico">⚙️</span>Ещё</button>
+  </nav>
+</div>
+
+<!-- Шторка снизу: выбор упражнений, детали, настройки -->
+<div class="sheet" id="sheet" hidden>
+  <div class="backdrop" data-act="sheetClose"></div>
+  <div class="panel" role="dialog" aria-modal="true">
+    <div class="grab"></div>
+    <div class="head">
+      <div class="t" id="sheet-title">Заголовок</div>
+      <button class="btn sm ghost" data-act="sheetClose">Закрыть</button>
+    </div>
+    <div class="body" id="sheet-body"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Скрытое поле для импорта резервной копии -->
+<input type="file" id="import-file" accept="application/json,.json" hidden>
+
+<script src="logic.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
