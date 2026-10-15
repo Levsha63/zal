@@ -204,8 +204,9 @@ body.resting #screen { padding-bottom: calc(var(--tabbar-h) + var(--bottom) + 84
 .btn[disabled] { opacity: .45; pointer-events: none; }
 
 /* Статистика */
-.stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+.stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; margin-bottom: 11px; }
 .stat-grid.three { grid-template-columns: repeat(3, 1fr); }
+.stat-grid.inline { margin-bottom: 0; }
 
 .stat {
   background: var(--card);
