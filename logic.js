@@ -377,6 +377,19 @@
 
   var GROUPS = ['Грудь', 'Спина', 'Ноги', 'Плечи', 'Бицепс', 'Трицепс', 'Пресс', 'Икры', 'Кардио'];
 
+  // Обхваты, которые меряют сантиметром. id попадает в файл данных, name — на экран.
+  var MEASURES = [
+    { id: 'neck', name: 'Шея' },
+    { id: 'shoulders', name: 'Плечи' },
+    { id: 'chest', name: 'Грудь' },
+    { id: 'waist', name: 'Талия' },
+    { id: 'hips', name: 'Таз' },
+    { id: 'thigh', name: 'Бедро' },
+    { id: 'calf', name: 'Голень' },
+    { id: 'biceps', name: 'Бицепс' },
+    { id: 'forearm', name: 'Предплечье' }
+  ];
+
   // kind: barbell | dumbbell | machine | bodyweight | time
   var SEED_EXERCISES = [
     ['Жим штанги лёжа', 'Грудь', 'barbell'],
@@ -523,7 +536,8 @@
       routines: seedRoutines(exercises),
       active: null,
       workouts: [],
-      body: []
+      body: [],
+      measures: []
     };
   }
 
@@ -653,6 +667,86 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Обхваты (талия, бицепс, грудь и т.д.), всё в сантиметрах            */
+  /* ------------------------------------------------------------------ */
+
+  function measureName(id) {
+    for (var i = 0; i < MEASURES.length; i++) if (MEASURES[i].id === id) return MEASURES[i].name;
+    return String(id || '');
+  }
+
+  /** Запись замеров за конкретный день (создаётся при необходимости). */
+  function measureRecord(state, when) {
+    var k = dateKey(when || new Date());
+    var list = state.measures || (state.measures = []);
+    for (var i = 0; i < list.length; i++) if (list[i].date === k) return list[i];
+    var rec = { date: k, values: {} };
+    list.push(rec);
+    list.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    return rec;
+  }
+
+  /** Записать один обхват. Значение 0 или пустое — удаляет замер. */
+  function setMeasure(state, id, cm, when) {
+    if (!id) return null;
+    var rec = measureRecord(state, when);
+    var v = round2(num(cm));
+    if (v > 0) rec.values[id] = v;
+    else delete rec.values[id];
+    // Пустую запись за день не храним
+    if (!Object.keys(rec.values).length) {
+      state.measures = (state.measures || []).filter(function (r) { return r !== rec; });
+      return null;
+    }
+    return rec;
+  }
+
+  /** История одного обхвата по датам (по возрастанию). */
+  function measureSeries(state, id) {
+    return (state.measures || [])
+      .filter(function (r) { return r && r.values && num(r.values[id]) > 0; })
+      .map(function (r) { return { date: r.date, value: round2(num(r.values[id])) }; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  }
+
+  /** Последнее известное значение каждого обхвата: { id: {value, date} }. */
+  function lastMeasures(state) {
+    var out = {};
+    (state.measures || []).forEach(function (r) {
+      if (!r || !r.values) return;
+      MEASURES.forEach(function (m) {
+        var v = num(r.values[m.id]);
+        if (v <= 0) return;
+        if (!out[m.id] || r.date >= out[m.id].date) out[m.id] = { value: round2(v), date: r.date };
+      });
+    });
+    return out;
+  }
+
+  /** Сводка для экрана: значение, когда измерено, изменение и число замеров. */
+  function measureSummary(state) {
+    var last = lastMeasures(state);
+    return Object.keys(last).map(function (id) {
+      var series = measureSeries(state, id);
+      var prev = series.length > 1 ? series[series.length - 2] : null;
+      return {
+        id: id,
+        name: measureName(id),
+        value: last[id].value,
+        date: last[id].date,
+        delta: prev ? round2(last[id].value - prev.value) : 0,
+        points: series.length,
+        first: series.length ? series[0] : null,
+        total: series.length > 1 ? round2(last[id].value - series[0].value) : 0
+      };
+    }).sort(function (a, b) {
+      var ia = MEASURES.map(function (m) { return m.id; }).indexOf(a.id);
+      var ib = MEASURES.map(function (m) { return m.id; }).indexOf(b.id);
+      return ia - ib;
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Импорт / экспорт                                                   */
   /* ------------------------------------------------------------------ */
 
@@ -676,7 +770,8 @@
       routines: [],
       active: null,
       workouts: [],
-      body: []
+      body: [],
+      measures: []
     };
     var seen = {};
     (Array.isArray(raw.exercises) ? raw.exercises : []).forEach(function (e) {
@@ -786,6 +881,22 @@
       if (kg > 0) st.body.push({ date: String(b.date || dateKey(new Date())).slice(0, 10), kg: round2(kg) });
     });
     st.body.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+
+    // Обхваты: оставляем только известные названия и положительные значения
+    var knownMeasure = {};
+    MEASURES.forEach(function (m) { knownMeasure[m.id] = true; });
+    (Array.isArray(raw.measures) ? raw.measures : []).forEach(function (r) {
+      if (!r || !r.values || typeof r.values !== 'object') return;
+      var values = {};
+      Object.keys(r.values).forEach(function (id) {
+        if (!knownMeasure[id]) return;
+        var v = num(r.values[id]);
+        if (v > 0) values[id] = round2(v);
+      });
+      if (!Object.keys(values).length) return;
+      st.measures.push({ date: String(r.date || dateKey(new Date())).slice(0, 10), values: values });
+    });
+    st.measures.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
     return st;
   }
 
@@ -823,6 +934,16 @@
     out.body.forEach(function (b) { byDate[b.date] = b; });
     inc.body.forEach(function (b) { byDate[b.date] = b; });
     out.body = Object.keys(byDate).map(function (k) { return byDate[k]; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    // обхваты по дате: значения из файла дополняют/перебивают текущие за тот же день
+    var mByDate = {};
+    out.measures.forEach(function (r) { mByDate[r.date] = { date: r.date, values: Object.assign({}, r.values) }; });
+    inc.measures.forEach(function (r) {
+      var target = mByDate[r.date] || (mByDate[r.date] = { date: r.date, values: {} });
+      Object.keys(r.values).forEach(function (id) { target.values[id] = r.values[id]; });
+    });
+    out.measures = Object.keys(mByDate).map(function (k) { return mByDate[k]; })
+      .filter(function (r) { return Object.keys(r.values).length; })
       .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
     if (!out.active && inc.active) out.active = inc.active;
     return out;
@@ -900,6 +1021,7 @@
   return {
     STATE_VERSION: STATE_VERSION,
     GROUPS: GROUPS,
+    MEASURES: MEASURES,
     // утилиты
     uid: uid, num: num, round2: round2, fmtNum: fmtNum, fmtKg: fmtKg, fmtDuration: fmtDuration,
     fmtClock: fmtClock, fmtDate: fmtDate, fmtDateFull: fmtDateFull, dayLabel: dayLabel, dateKey: dateKey,
@@ -915,6 +1037,8 @@
     addExercise: addExercise, emptyWorkout: emptyWorkout, addEntry: addEntry, newSet: newSet,
     cloneSet: cloneSet, warmupSets: warmupSets, setsFromLast: setsFromLast, finishWorkout: finishWorkout,
     removeWorkout: removeWorkout, bodyWeightSeries: bodyWeightSeries, setBodyWeight: setBodyWeight,
+    measureName: measureName, measureRecord: measureRecord, setMeasure: setMeasure,
+    measureSeries: measureSeries, lastMeasures: lastMeasures, measureSummary: measureSummary,
     routineName: routineName, seedExercises: seedExercises, seedRoutines: seedRoutines,
     // импорт/экспорт
     serialize: serialize, parseImport: parseImport, mergeStates: mergeStates, exportPayload: exportPayload,
