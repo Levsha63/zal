@@ -8,11 +8,12 @@
   var KEY = 'zal_state_v1';
   var S = null;
   var view = 'train';
-  var ui = { pickerGroup: 'Все', pickerQuery: '', pickerTarget: 'active', progId: null, histId: null, routineId: null };
+  var ui = { pickerGroup: 'Все', pickerQuery: '', pickerTarget: 'active', progId: null, histId: null, routineId: null, measureId: null, storage: null };
   var rest = { until: 0, total: 0, token: 0 };
   var saveTimer = null;
   var toastTimer = null;
   var pendingCharts = {};
+  var BACKUP_KEY = 'zal_backup_v1';
   var MONTH_FULL = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
   var COL = { accent: '#c6f432', accent2: '#7fe0c8', line: '#2a3346', muted: '#8b97ab', gold: '#ffd166' };
 
@@ -25,6 +26,15 @@
     });
   }
   function attr(s) { return esc(s); }
+
+  /** Русские формы числительных: 1 замер, 2 замера, 5 замеров */
+  function plural(n, one, few, many) {
+    var num = Math.abs(Math.round(WT.num(n)));
+    var m10 = num % 10, m100 = num % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+    return many;
+  }
 
   /* ================================================================== */
   /* Хранение                                                           */
@@ -45,6 +55,76 @@
     catch (e) { toast('Не получилось сохранить — возможно, закончилось место'); }
   }
   function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 200); }
+
+  /* --- Автоснимок: страховка от случайной порчи данных -----------------
+   * Раз в сутки (или по требованию) кладём копию состояния рядом с основными
+   * данными. Если что-то пойдёт не так — есть откуда восстановиться. */
+  function readBackup() {
+    try { return JSON.parse(localStorage.getItem(BACKUP_KEY) || 'null'); } catch (e) { return null; }
+  }
+
+  function snapshot(reason, force) {
+    var prev = readBackup();
+    if (!force && prev && prev.at && (Date.now() - Date.parse(prev.at)) < 20 * 3600 * 1000) return false;
+    try {
+      localStorage.setItem(BACKUP_KEY, JSON.stringify({
+        at: new Date().toISOString(),
+        reason: reason || 'автоснимок',
+        workouts: (S.workouts || []).length,
+        measures: (S.measures || []).length,
+        state: S
+      }));
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function backupInfo() {
+    var b = readBackup();
+    if (!b || !b.at) return null;
+    return {
+      at: b.at,
+      reason: b.reason || '',
+      workouts: b.workouts || 0,
+      measures: b.measures || 0,
+      size: 0
+    };
+  }
+
+  /** Показать размер занятого хранилища и попросить браузер не вытеснять данные. */
+  function refreshStorage() {
+    var info = { usage: 0, quota: 0, persisted: false, ready: false };
+    try {
+      if (navigator.storage && navigator.storage.estimate) {
+        navigator.storage.estimate().then(function (est) {
+          info.usage = est.usage || 0;
+          info.quota = est.quota || 0;
+          info.ready = true;
+          ui.storage = info;
+          if (view === 'more') render();
+        }).catch(function () {});
+      }
+      if (navigator.storage && navigator.storage.persisted) {
+        navigator.storage.persisted().then(function (p) {
+          info.persisted = !!p;
+          ui.storage = Object.assign({}, ui.storage || info, { persisted: !!p, ready: true });
+          if (view === 'more') render();
+        }).catch(function () {});
+      }
+    } catch (e) { /* нет поддержки — покажем то, что знаем */ }
+    ui.storage = ui.storage || info;
+  }
+
+  /** Просьба «не удалять данные при нехватке места» (iOS/Chrome). */
+  function askPersistent() {
+    try {
+      if (navigator.storage && navigator.storage.persist) {
+        navigator.storage.persist().then(function (granted) {
+          ui.storage = Object.assign({}, ui.storage || {}, { persisted: !!granted, ready: true });
+          if (view === 'more') render();
+        }).catch(function () {});
+      }
+    } catch (e) { /* не поддерживается — не беда */ }
+  }
 
   function toast(msg, kind) {
     var t = $('#toast');
@@ -412,10 +492,11 @@
       stat(sum.total, 'тренировок') +
       stat(sum.avgPerWeek, 'в среднем в неделю') +
       stat(sum.weeks + ' 🔥', 'недель подряд') +
-      stat(WT.fmtVolume(sum.totalVolume), 'поднято всего за всё время') +
+      stat(WT.fmtVolume(sum.totalVolume), 'поднято всего') +
       '</div>';
 
     html += bodyWeightCard();
+    html += measureCard();
 
     if (ui.progId) html += exerciseProgressCard(ui.progId);
 
@@ -470,6 +551,70 @@
       html += '<div class="chart-wrap mt"><canvas class="chart" id="' + id + '"></canvas></div>';
     }
     return html + '</div>';
+  }
+
+  /* --- обхваты: талия, бицепс, грудь и т.д. -------------------------- */
+
+  function measureCard() {
+    var summary = WT.measureSummary(S);
+    var html = '<div class="card"><div class="spread"><h3>Обхваты, см</h3>' +
+      '<button class="btn sm" data-act="measureAdd">Записать</button></div>';
+    if (!summary.length) {
+      return html + '<div class="small muted">Талия, бицепс, грудь, бёдра, шея… Записывай раз в две недели — ' +
+        'увидишь, как меняется тело, даже когда вес стоит на месте.</div></div>';
+    }
+    html += '<div class="list" style="border:0">' + summary.map(function (m) {
+      // Чип показываем только когда есть с чем сравнивать и что показать
+      var chip = (m.points < 2 || m.delta === 0) ? ''
+        : '<span class="chip ' + (m.delta < 0 ? 'accent' : '') + '">' +
+          (m.delta > 0 ? '+' : '') + WT.fmtNum(m.delta) + '</span>';
+      var same = m.id === ui.measureId;
+      return '<button class="list-item" data-act="measureOpen" data-id="' + attr(m.id) + '">' +
+        '<div class="grow" style="min-width:0">' +
+        '<div class="t ellipsis">' + esc(m.name) + ' — ' + WT.fmtNum(m.value) + ' см</div>' +
+        '<div class="d ellipsis">' + WT.dayLabel(m.date) + ' · ' + m.points + ' ' +
+        plural(m.points, 'замер', 'замера', 'замеров') +
+        (m.points > 1 && m.total !== 0 ? ' · всего ' + (m.total > 0 ? '+' : '') + WT.fmtNum(m.total) + ' см' : '') +
+        '</div></div>' + chip + '<div class="chev">' + (same ? '▾' : '›') + '</div></button>';
+    }).join('') + '</div>';
+    if (ui.measureId) html += measureChart(ui.measureId);
+    html += '<div class="tiny muted mt">Меряй утром, одним сантиметром, не втягивая живот — так динамика честнее.</div>';
+    return html + '</div>';
+  }
+
+  function measureChart(id) {
+    var series = WT.measureSeries(S, id);
+    if (!series.length) return '';
+    var first = series[0], last = series[series.length - 1];
+    var diff = WT.round2(last.value - first.value);
+    var html = '<div class="hr"></div>' +
+      '<div class="stat-grid three inline">' +
+      stat(WT.fmtNum(last.value) + '<span class="small muted"> см</span>', 'сейчас', 'slim') +
+      stat((diff > 0 ? '+' : '') + WT.fmtNum(diff) + '<span class="small muted"> см</span>', 'с ' + WT.fmtDate(first.date), 'slim') +
+      stat(series.length, 'замеров', 'slim') +
+      '</div>';
+    var chartId = 'chart-measure';
+    pendingCharts[chartId] = {
+      series: series.map(function (p) { return { x: Date.parse(p.date), y: p.value }; }),
+      color: COL.accent2, unit: 'см', decimals: 1
+    };
+    html += '<div class="chart-wrap mt"><canvas class="chart" id="' + chartId + '"></canvas></div>';
+    html += '<div class="row mt"><button class="btn sm ghost grow" data-act="measureClose">Свернуть график</button>' +
+      '<button class="btn sm grow" data-act="measureAdd">Новый замер</button></div>';
+    return html;
+  }
+
+  function measuresSheetHtml() {
+    var last = WT.lastMeasures(S);
+    return '<div class="small muted mb">Впиши, что измерил. Пустое поле — замер не записывается; ' +
+      'стёртое значение убирает старый замер.</div>' +
+      WT.MEASURES.map(function (m) {
+        var v = last[m.id] ? WT.fmtNum(last[m.id].value) : '';
+        return '<label class="lbl">' + esc(m.name) + ', см</label>' +
+          '<input class="input" inputmode="decimal" data-m="' + attr(m.id) + '" value="' + v + '" placeholder="—">';
+      }).join('') +
+      '<button class="btn primary wide mt" data-act="measureSave">Сохранить замеры</button>' +
+      '<div class="tiny muted mt">Запишу за сегодня — ' + WT.fmtDate(new Date()) + '.</div>';
   }
 
   function exerciseProgressCard(id) {
@@ -547,6 +692,8 @@
       '<button class="list-item" data-act="wipe"><div class="ico-lg">🗑</div><div class="grow"><div class="t danger-text">Удалить все данные</div><div class="d">действие необратимо</div></div><div class="chev">›</div></button>' +
       '</div><div class="tiny muted mt">Занято в памяти телефона: ' + Math.max(1, Math.round(bytes / 1024)) + ' КБ</div></div>';
 
+    html += storageCard();
+
     html += '<div class="card"><h3>Настройки</h3>' +
       '<label class="lbl">Отдых между подходами</label>' +
       '<div class="seg">' + [60, 90, 120, 180].map(function (v) {
@@ -572,8 +719,36 @@
       '3. Запусти с иконки — адресной строки не будет, всё работает без интернета.<br>' +
       'Данные хранятся только на телефоне. Резервная копия — выше в разделе «Данные».' +
       '</div><div class="hr"></div>' +
-      '<div class="tiny muted">Zal · дневник тренировок · версия 1.0 · ' +
+      '<div class="tiny muted">Zal · дневник тренировок · версия 1.1 · ' +
       (window.navigator.standalone ? 'запущено как приложение' : 'открыто в браузере') + '</div></div>';
+    return html;
+  }
+
+  /** Карточка «Хранение»: где лежат данные, автоснимок, постоянное хранилище. */
+  function storageCard() {
+    var info = ui.storage || {};
+    var b = backupInfo();
+    var mb = function (bytes) { return Math.max(1, Math.round(WT.num(bytes) / 1024)) + ' КБ'; };
+    var html = '<div class="card"><h3>Хранение данных</h3>' +
+      '<div class="small muted">Данные лежат в памяти самого приложения на телефоне — это не кэш браузера: ' +
+      'они остаются после закрытия приложения и перезагрузки телефона. Пропадут, если удалить значок Zal ' +
+      'с экрана «Домой» или включить очистку данных Safari. Файл резервной копии — единственная копия, ' +
+      'которая переживёт смену телефона.</div>' +
+      '<div class="hr"></div>' +
+      '<div class="kv"><span class="k">Постоянное хранилище</span><span class="v">' +
+      (info.persisted ? 'включено ✓' : (info.ready ? 'не выдано — нажмите «Закрепить»' : 'проверяется…')) + '</span></div>' +
+      '<div class="kv"><span class="k">Занято приложением</span><span class="v">' +
+      (info.usage ? mb(info.usage) : Math.max(1, Math.round(JSON.stringify(S).length / 1024)) + ' КБ') + '</span></div>' +
+      '<div class="kv"><span class="k">Автоснимок данных</span><span class="v">' +
+      (b ? WT.dayLabel(b.at) + ', ' + WT.pad2(new Date(b.at).getHours()) + ':' + WT.pad2(new Date(b.at).getMinutes()) : 'ещё не делался') + '</span></div>' +
+      (b ? '<div class="kv"><span class="k">В снимке</span><span class="v">тренировок ' + b.workouts + ', замеров ' + b.measures + '</span></div>' : '') +
+      '<div class="row mt">' +
+      '<button class="btn sm grow" data-act="snapshotNow">Сделать снимок</button>' +
+      '<button class="btn sm ghost grow" data-act="snapshotRestore"' + (b ? '' : ' disabled') + '>Восстановить</button>' +
+      '</div>' +
+      '<button class="btn sm wide ghost mt" data-act="askPersist">Закрепить данные на телефоне</button>' +
+      '<div class="tiny muted mt">Снимок делается автоматически раз в сутки и после каждой тренировки — ' +
+      'это защита от случайной порчи записей.</div></div>';
     return html;
   }
 
@@ -723,6 +898,16 @@
     return out;
   }
 
+  /** Все группы мышц: стандартные плюс те, что пользователь придумал сам. */
+  function allGroups() {
+    var list = WT.GROUPS.slice();
+    S.exercises.forEach(function (e) {
+      var g = String(e.group || '').trim();
+      if (g && list.indexOf(g) < 0) list.push(g);
+    });
+    return list;
+  }
+
   /** Список в шторке выбора: обновляется отдельно от поля поиска,
    *  чтобы на iPhone не закрывалась клавиатура при вводе. */
   function pickerHtml() {
@@ -730,13 +915,16 @@
       '<div id="picker-list">' + pickerListHtml() + '</div>' +
       '<div class="hr"></div><div class="lbl">Своё упражнение</div>' +
       '<input class="input" id="new-ex-name" placeholder="Название, например «Тяга Т-грифа»">' +
-      '<div class="row mt"><select class="input grow" id="new-ex-group">' +
-      WT.GROUPS.map(function (g) { return '<option>' + g + '</option>'; }).join('') + '</select>' +
-      '<select class="input grow" id="new-ex-kind">' +
+      '<input class="input mt" id="new-ex-group" list="group-list" placeholder="Группа мышц — выбери или впиши свою">' +
+      '<datalist id="group-list">' + allGroups().map(function (g) { return '<option value="' + attr(g) + '">'; }).join('') + '</datalist>' +
+      '<div class="lbl">Снаряд</div>' +
+      '<select class="input" id="new-ex-kind">' +
       '<option value="barbell">штанга</option><option value="dumbbell">гантели</option>' +
       '<option value="machine">тренажёр</option><option value="bodyweight">свой вес</option>' +
-      '<option value="time">на время (сек)</option></select></div>' +
-      '<button class="btn primary wide mt" data-act="createExercise">Добавить упражнение</button>';
+      '<option value="time">на время (сек)</option></select>' +
+      '<button class="btn primary wide mt" data-act="createExercise">Добавить упражнение</button>' +
+      '<div class="tiny muted mt">Группу можно написать любую: «Трапеции», «Ягодицы», «Задняя дельта» — ' +
+      'она сразу появится в фильтрах и в статистике.</div>';
   }
 
   function refreshPickerList() {
@@ -745,7 +933,7 @@
   }
 
   function pickerListHtml() {
-    var groups = ['Все'].concat(WT.GROUPS);
+    var groups = ['Все'].concat(allGroups());
     var q = ui.pickerQuery.trim().toLowerCase();
     var recent = recentExerciseIds(8);
     var html = '<div class="tag-row mt">' + groups.map(function (g) {
@@ -1083,7 +1271,9 @@
         var nameEl = $('#new-ex-name');
         var nm = nameEl ? nameEl.value : '';
         if (!nm.trim()) { toast('Впиши название'); return; }
-        var created = WT.addExercise(S, nm, $('#new-ex-group').value, $('#new-ex-kind').value);
+        var groupEl = $('#new-ex-group');
+        var grp = groupEl ? groupEl.value.trim().slice(0, 40) : '';
+        var created = WT.addExercise(S, nm, grp || 'Другое', $('#new-ex-kind').value);
         save();
         // сразу добавляем в тренировку (или в шаблон)
         if (sheetName === 'routine') {
@@ -1276,6 +1466,7 @@
         }
         var done = WT.finishWorkout(S);
         save();
+        snapshot('после тренировки', true);
         stopRest();
         render();
         openFinishSummary(done);
@@ -1370,6 +1561,35 @@
         toast('Вес записан: ' + WT.fmtNum(v) + ' кг');
         return;
 
+      /* --- обхваты --- */
+      case 'measureAdd':
+        openSheet('measures', 'Замеры тела, см', measuresSheetHtml());
+        return;
+
+      case 'measureSave':
+        var filled = 0;
+        $$('#sheet-body [data-m]').forEach(function (inp) {
+          var val = WT.num(inp.value);
+          WT.setMeasure(S, inp.getAttribute('data-m'), val);
+          if (val > 0) filled++;
+        });
+        save();
+        snapshot('после замеров', false);
+        closeSheet();
+        render();
+        toast(filled ? 'Записано замеров: ' + filled : 'Замеры обновлены');
+        return;
+
+      case 'measureOpen':
+        ui.measureId = (ui.measureId === id) ? null : id;
+        render();
+        return;
+
+      case 'measureClose':
+        ui.measureId = null;
+        render();
+        return;
+
       /* --- шаблоны --- */
       case 'routineOpen':
         openRoutineSheet(id);
@@ -1428,6 +1648,7 @@
       case 'importMerge':
       case 'importReplace':
         if (!sheetIncoming) return;
+        snapshot('перед загрузкой файла', true);
         S = WT.mergeStates(S, sheetIncoming, act === 'importMerge' ? 'merge' : 'replace');
         sheetIncoming = null;
         save();
@@ -1441,12 +1662,15 @@
         return;
 
       case 'wipe':
-        if (confirmAsk('Удалить ВСЕ тренировки, шаблоны и настройки? Это необратимо.')) {
+        if (confirmAsk('Удалить ВСЕ тренировки, шаблоны, замеры и настройки? Это необратимо. ' +
+          'Автоснимок останется — из него можно будет восстановиться.')) {
+          snapshot('перед удалением', true);
           S = WT.defaultState();
           save();
           ui.progId = null;
+          ui.measureId = null;
           render();
-          toast('Все данные удалены');
+          toast('Все данные удалены. Снимок сохранён в «Хранение данных».');
         }
         return;
 
@@ -1474,6 +1698,34 @@
         S.settings[key] = !S.settings[key];
         save();
         render();
+        return;
+
+      /* --- хранение и автоснимки --- */
+      case 'snapshotNow':
+        if (snapshot('вручную', true)) { toast('Снимок сделан'); render(); }
+        else toast('Не удалось сделать снимок');
+        return;
+
+      case 'snapshotRestore':
+        var b = readBackup();
+        if (!b || !b.state) { toast('Снимка пока нет'); return; }
+        if (!confirmAsk('Вернуть данные из снимка от ' + WT.dayLabel(b.at) + '? Текущие записи (' +
+          (S.workouts || []).length + ' тренировок) будут заменены на ' + (b.workouts || 0) + ' из снимка.')) return;
+        snapshot('перед восстановлением', true);
+        S = WT.normalizeState(b.state);
+        save();
+        ui.progId = null;
+        ui.measureId = null;
+        closeSheet();
+        render();
+        toast('Данные восстановлены из снимка');
+        return;
+
+      case 'askPersist':
+        askPersistent();
+        refreshStorage();
+        toast('Запрос отправлен — смотрите статус выше');
+        setTimeout(function () { if (view === 'more') render(); }, 700);
         return;
 
       default:
@@ -1640,6 +1892,17 @@
 
   load();
   render();
+  refreshStorage();
+  snapshot('автозапуск', false);
+
+  // «Закрепляем» хранилище при первом же касании — Safari выдаёт это только
+  // в ответ на действие пользователя.
+  var askedPersist = false;
+  document.addEventListener('click', function () {
+    if (askedPersist) return;
+    askedPersist = true;
+    askPersistent();
+  }, { once: false });
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     window.addEventListener('load', function () {
@@ -1649,7 +1912,7 @@
 
   // Обновляем данные при возврате в приложение (например, после смены дня)
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) render();
+    if (!document.hidden) { render(); refreshStorage(); }
   });
 
   window.ZAL = { state: function () { return S; }, render: render };
