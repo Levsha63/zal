@@ -719,7 +719,7 @@
       '3. Запусти с иконки — адресной строки не будет, всё работает без интернета.<br>' +
       'Данные хранятся на телефоне отдельно от Safari. Резервная копия — выше в разделе «Данные».' +
       '</div><div class="hr"></div>' +
-      '<div class="tiny muted">Zal · дневник тренировок · версия 1.1.1 · ' +
+      '<div class="tiny muted">Zal · дневник тренировок · версия 1.2 · ' +
       (window.navigator.standalone ? 'запущено как приложение' : 'открыто в браузере') + '</div></div>';
     return html;
   }
@@ -1897,6 +1897,36 @@
   render();
   refreshStorage();
   snapshot('автозапуск', false);
+
+  /* Экран запуска: держим его, пока приложение не будет готово, затем плавно
+   * убираем и снимаем класс boot (он включает анимацию появления интерфейса). */
+  var splashEl = document.getElementById('splash');
+  var bootedAt = Date.now();
+  var splashHidden = false;
+
+  function hideSplash(immediately) {
+    if (splashHidden || !splashEl) return;
+    splashHidden = true;
+    // Минимальное время показа, чтобы заставка не «мигала» на быстром телефоне
+    var wait = immediately ? 0 : Math.max(0, 650 - (Date.now() - bootedAt));
+    setTimeout(function () {
+      splashEl.classList.add('gone');
+      document.body.classList.remove('boot');
+      setTimeout(function () {
+        splashEl.hidden = true;
+        if (splashEl.parentNode) splashEl.parentNode.removeChild(splashEl);
+      }, 550);
+    }, wait);
+  }
+
+  // Если данные уже загружены и экран отрисован — можно убирать заставку
+  hideSplash(false);
+  // На всякий случай: если что-то пойдёт не так, заставка не задержится
+  setTimeout(function () { hideSplash(true); }, 2500);
+  // И мгновенно уступаем первому касанию пользователя
+  ['pointerdown', 'touchstart', 'keydown'].forEach(function (evt) {
+    document.addEventListener(evt, function () { hideSplash(true); }, { once: true, passive: true });
+  });
 
   // «Закрепляем» хранилище при первом же касании — Safari выдаёт это только
   // в ответ на действие пользователя.
