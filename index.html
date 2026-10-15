@@ -23,9 +23,35 @@
 <link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png">
 <link rel="icon" type="image/png" sizes="64x64" href="icons/favicon-64.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+
+<!-- Стартовые экраны iPhone: пока приложение грузится, iOS показывает свою
+     картинку. Без них при запуске с иконки мелькает белый экран. -->
+<link rel="apple-touch-startup-image" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)" href="splash/splash-640x1136.png">
+<link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)" href="splash/splash-750x1334.png">
+<link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3)" href="splash/splash-1242x2208.png">
+<link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)" href="splash/splash-1125x2436.png">
+<link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)" href="splash/splash-828x1792.png">
+<link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)" href="splash/splash-1242x2688.png">
+<link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)" href="splash/splash-1170x2532.png">
+<link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)" href="splash/splash-1179x2556.png">
+<link rel="apple-touch-startup-image" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3)" href="splash/splash-1206x2622.png">
+<link rel="apple-touch-startup-image" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)" href="splash/splash-1284x2778.png">
+<link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" href="splash/splash-1290x2796.png">
+
 <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="boot">
+
+<!-- Экран запуска: показывается до готовности приложения, затем плавно уходит.
+     pointer-events: none — тапы проходят сквозь него. -->
+<div id="splash" aria-hidden="true">
+  <div class="splash-inner">
+    <img src="icons/icon-192.png" alt="" width="104" height="104">
+    <div class="splash-name">Zal</div>
+    <div class="splash-sub">дневник тренировок</div>
+    <div class="splash-bar"><i></i></div>
+  </div>
+</div>
 
 <div id="app">
   <header id="topbar">
