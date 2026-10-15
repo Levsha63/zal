@@ -29,6 +29,102 @@
    иначе, например, панель таймера отдыха видна всегда. */
 [hidden] { display: none !important; }
 
+/* ------------------------------------------------------------------ */
+/* Запуск приложения: экран-заставка и появление интерфейса            */
+/* ------------------------------------------------------------------ */
+
+#splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(130% 80% at 50% 38%, #1b2233 0%, #0d1017 62%);
+  pointer-events: none;              /* тапы проходят сквозь заставку */
+  opacity: 1;
+  transition: opacity .5s ease, transform .5s ease;
+}
+
+#splash.gone { opacity: 0; transform: scale(1.05); }
+
+.splash-inner {
+  text-align: center;
+  animation: splashIn .75s cubic-bezier(.2, .9, .25, 1) both;
+}
+
+#splash img {
+  width: 104px;
+  height: 104px;
+  border-radius: 26px;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, .55);
+  animation: splashGlow 2.4s ease-in-out infinite;
+}
+
+.splash-name {
+  margin-top: 16px;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -.6px;
+}
+
+.splash-sub { margin-top: 4px; font-size: 12.5px; color: var(--muted, #8b97ab); }
+
+.splash-bar {
+  width: 120px;
+  height: 4px;
+  margin: 20px auto 0;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, .12);
+  overflow: hidden;
+}
+
+.splash-bar i {
+  display: block;
+  height: 100%;
+  width: 42%;
+  border-radius: 99px;
+  background: var(--accent, #c6f432);
+  animation: splashBar 1.1s ease-in-out infinite;
+}
+
+@keyframes splashIn {
+  from { opacity: 0; transform: translateY(16px) scale(.94); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes splashGlow {
+  0%, 100% { box-shadow: 0 20px 44px rgba(0, 0, 0, .55); }
+  50% { box-shadow: 0 20px 60px rgba(198, 244, 50, .28); }
+}
+
+@keyframes splashBar {
+  0% { transform: translateX(-115%); }
+  100% { transform: translateX(330%); }
+}
+
+/* Появление интерфейса — только при запуске (класс boot снимается после) */
+body.boot #topbar { animation: fadeDown .42s ease-out both; }
+body.boot #screen > * { animation: riseIn .44s cubic-bezier(.2, .9, .25, 1) both; }
+body.boot #screen > *:nth-child(1) { animation-delay: .05s; }
+body.boot #screen > *:nth-child(2) { animation-delay: .1s; }
+body.boot #screen > *:nth-child(3) { animation-delay: .15s; }
+body.boot #screen > *:nth-child(4) { animation-delay: .2s; }
+body.boot #screen > *:nth-child(5) { animation-delay: .24s; }
+body.boot #screen > *:nth-child(6) { animation-delay: .28s; }
+body.boot .tabbar { animation: riseUp .5s ease-out both; animation-delay: .12s; }
+
+@keyframes riseIn { from { opacity: 0; transform: translateY(12px); } }
+@keyframes fadeDown { from { opacity: 0; transform: translateY(-10px); } }
+@keyframes riseUp { from { opacity: 0; transform: translateY(16px); } }
+
+/* Кому анимации мешают (или экономит заряд) — выключаем совсем */
+@media (prefers-reduced-motion: reduce) {
+  #splash, #splash img, .splash-inner, .splash-bar i,
+  body.boot #topbar, body.boot #screen > *, body.boot .tabbar { animation: none !important; }
+  #splash { transition: opacity .2s linear; }
+}
+
 html, body {
   margin: 0;
   padding: 0;
