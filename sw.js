@@ -6,7 +6,7 @@
  *
  * При изменении файлов приложения поднимите номер версии ниже: CACHE_VERSION.
  */
-var CACHE_VERSION = 'zal-v1.1.0';
+var CACHE_VERSION = 'zal-v1.1.1';
 var OFFLINE_URLS = [
   './',
   './index.html',
